@@ -1,0 +1,19 @@
+dubbo:
+  registry:
+    address: 10.107.33.186:2181,10.107.33.243:2181,10.107.33.81:2181
+  home: /opt/application/frequency_control
+  reference:
+    check: false
+  threads: 10
+
+bloom:
+  filter:
+    size: 40000000
+    fpp: 0.01
+
+redis:
+  host: 10.107.42.6
+  port: 6380
+  sentinel:
+    master: mymaster
+    nodes: 10.107.33.210:26379,10.107.33.134:26379,10.107.33.130:26379

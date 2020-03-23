@@ -1,0 +1,4 @@
+rootProject.name = 'motor_frequency_control'
+include 'motor_frequency_control_service'
+include 'motor_frequency_control_rpc'
+

@@ -1,0 +1,26 @@
+dependencies {
+    testCompile group: 'junit', name: 'junit', version: '4.12'
+}
+
+apply plugin: 'maven' // 启用Maven Plugin
+version = '1.0.0'
+
+uploadArchives() {
+    repositories {
+        mavenDeployer {
+            repository(url: 'http://172.16.248.113:8081/repository/maven-releases/') {
+                authentication(userName: 'admin', password: 'admin123')
+            }
+            pom.project {
+                groupId 'com.motor' // groupId
+                artifactId 'motor_frequency_control_rpc' // artifactId
+                version '1.0.0' // 发布版本
+                description 'MOTOR 频控' // 说明描述
+            }
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+}

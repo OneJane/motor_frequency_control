@@ -1,0 +1,51 @@
+ext {
+    guavaVersion = '27.0.1-jre'
+    junitVersion = '4.12' 
+    fastJsonVersion = '1.2.54'
+    redisVersion = '2.9.0'
+    lombokVersion = '1.18.8'
+    dubboVersion = '0.2.0'
+}
+
+apply plugin: 'org.springframework.boot'
+version = '1.0.0'
+
+configurations {
+    all*.exclude module : 'spring-boot-starter-logging'
+}
+
+dependencies {
+    annotationProcessor 'org.projectlombok:lombok:1.18.8'
+    compileOnly 'org.projectlombok:lombok:1.18.8'
+    testAnnotationProcessor 'org.projectlombok:lombok:1.18.8'
+    testCompileOnly 'org.projectlombok:lombok:1.18.8'
+    compile project(":motor_frequency_control_rpc")
+    compile(
+            //spring框架相关
+            "org.springframework.boot:spring-boot-starter-web:${springBootVersion}",
+            "org.springframework.boot:spring-boot-configuration-processor:${springBootVersion}",
+            "org.springframework.boot:spring-boot-starter-log4j:1.3.8.RELEASE",
+            // json相关
+            "com.alibaba:fastjson:${fastJsonVersion}",
+            // bloom filter相关
+            "com.google.guava:guava:${guavaVersion}",
+            "redis.clients:jedis:${redisVersion}",
+            "org.redisson:redisson:3.11.5", 
+            //工具类相关
+            "org.projectlombok:lombok:${lombokVersion}",
+            // dubbo相关
+            "com.alibaba.boot:dubbo-spring-boot-starter:${dubboVersion}",
+            'com.101tec:zkclient:0.10'
+    )
+    compile ("org.springframework.boot:spring-boot-starter-data-redis:${springBootVersion}"){
+        exclude group: 'redis.clients'
+        exclude group: 'io.lettuce'
+    }
+ 
+    testCompile(
+            "junit:junit:${junitVersion}",
+            "org.springframework.boot:spring-boot-starter-test:${springBootVersion}",
+    )
+}
+
+apply from: 'deploy.gradle'

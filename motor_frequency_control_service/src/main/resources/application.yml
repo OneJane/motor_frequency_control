@@ -1,0 +1,51 @@
+server:
+  port: 6666
+
+spring:
+  profiles:
+    active: test
+  redis:
+    timeout: 30000
+    jedis:
+      pool:
+        max-active: 1024
+        max-wait: -1
+        max-idle: 200
+        min-idle: 10
+    host: ${redis.host}
+    port: ${redis.port}
+    sentinel:
+      master: ${redis.sentinel.master}
+      nodes: ${redis.sentinel.nodes}
+
+bloom:
+  filter:
+    size: ${bloom.filter.size}
+    fpp: ${bloom.filter.fpp}
+
+
+
+
+dubbo:
+  registry:
+    protocol: zookeeper
+    address: ${dubbo.registry.address}
+    id: registry
+    client: zkclient
+    timeout: 100000
+    file: ${dubbo.home}/frequency_control_dubbo/dubbo-registry.properties
+  protocol:
+    port: 21002
+    name: dubbo
+    id: dubbo
+    status: server
+    server: netty
+  application:
+    name: frequency-control-provider
+    id: frequency-control-provider
+    qosEnable: true
+    qosPort: 23334
+    qosAcceptForeignIp: false
+  consumer:
+    timeout: 3000
+    check: false

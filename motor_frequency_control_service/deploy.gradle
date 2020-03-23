@@ -1,0 +1,71 @@
+/**
+ * 该脚本用于在服务器项目源目录中, 编译发布至工作目录
+ * ./gradle clean build deploy -Denv=$env -DappDir=$APP_DIR -Djk=$JK
+ * ./gradle clean build deploy -Denv=test -DappDir=./output -Djk=$JK
+ */
+ext {
+    env = System.getProperty('env') // -Denv=dev|test|prod
+    appDir = file(System.getProperty('appDir') ?: "${buildDir}/${project.name}")
+    devResourcesDir = file("${projectDir}/deploy/dev")
+    testResourcesDir = file("${projectDir}/deploy/test")
+    prodResourcesDir = file("${projectDir}/deploy/prod")
+    extranalResourcesDir = file("${projectDir}/src/main/resources")
+    binDir = file("${projectDir}/bin")
+    appName = name
+}
+
+/* ----------------------------------------------------------------------------  */
+/* 依赖于编译, 发布运行文件至工作目录  */
+/* ----------------------------------------------------------------------------  */
+task copyToAppDir(type: Copy) {
+    doFirst {
+        logger.info "编译, 发布运行文件至工作目录:${appDir}......"
+    }
+    from(libsDir){
+        include "${appName}-${version}.jar"
+        into ""
+    }
+    from(binDir) {
+        include '*.sh'
+        into "bin"
+    }
+    from(extranalResourcesDir) {
+        into "config"
+    }
+    into appDir
+}
+
+/* ----------------------------------------------------------------------------  */
+/* 根据运行环境替换资源文件  */
+/* ----------------------------------------------------------------------------  */
+task replaceResources(type: Copy) {
+    doFirst {
+        logger.info "根据运行环境替换资源文件,env=${env}......"
+    }
+    if (env == 'dev') {
+        from(devResourcesDir) {
+            include '*.*'
+            into "config"
+        }
+    } else if (env == 'test') {
+        from(testResourcesDir) {
+            include '*.*'
+            into "config"
+        }
+    } else if (env == 'prod'){
+        from(prodResourcesDir) {
+            include '*.*'
+            into "config"
+        }
+    }
+    into appDir
+}
+
+/* ----------------------------------------------------------------------------  */
+/* 重启服务(sh) */
+/* ----------------------------------------------------------------------------  */
+task deploy(dependsOn: [copyToAppDir, replaceResources]) {
+    doFirst {
+        logger.info '重启服务......'
+    }
+}
