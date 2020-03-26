@@ -1,14 +1,9 @@
 package com.motor.frequency.util;
 
 import com.alibaba.fastjson.JSON;
-import com.google.common.base.Preconditions;
 import com.google.common.hash.Funnels;
 import com.google.common.hash.Hashing;
 import com.motor.frequency.config.BloomFilterConfig;
-import com.motor.frequency.config.BloomFilterHelper;
-import com.motor.frequency.redis.MotorJedis;
-import com.motor.frequency.redis.MotorJedisSentinelPool;
-import com.motor.frequency.redis.MotorPipeline;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RBloomFilter;
 import org.redisson.api.RedissonClient;
@@ -21,9 +16,7 @@ import org.springframework.data.redis.connection.StringRedisConnection;
 import org.springframework.data.redis.core.*;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
-import redis.clients.jedis.JedisPool;
 
-import javax.annotation.Nullable;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -46,25 +39,11 @@ public class RedisUtil {
     private RedisTemplate<String, String> redisTemplate;
 
     @Autowired
-    private JedisPool jedisPool;
-
-    @Autowired
     private BloomFilterConfig bloomFilterConfig;
-
-    private static MotorJedisSentinelPool sentinelPool;
-    @Autowired
-    public  void setSentinelPool(MotorJedisSentinelPool sentinelPool) {
-        RedisUtil.sentinelPool = sentinelPool;
-    }
 
     // 两个月过期
     private static final long TIME_OUT = 60;
-    //bit数组长度
-    private long numBits;
-    //hash函数数量
-    private int numHashFunctions;
 
-    final Random random = new Random();
 
     /**
      * 默认过期时长，单位：秒
@@ -175,37 +154,6 @@ public class RedisUtil {
         redisTemplate.persist(key);
     }
 
-    public boolean isExistBloom(String key) {
-        long[] indexs = getIndexs(key);
-        List list = redisTemplate.executePipelined(new RedisCallback<Object>() {
-            @Nullable
-            @Override
-            public Object doInRedis(RedisConnection redisConnection) throws DataAccessException {
-                redisConnection.openPipeline();
-                for (long index : indexs) {
-                    redisConnection.getBit(key.getBytes(), index);
-                }
-                redisConnection.close();
-                return null;
-            }
-        });
-        return !list.contains(false);
-    }
-
-
-    private long[] getIndexs(String key) {
-        long hash1 = hash(key);
-        long hash2 = hash1 >>> 16;
-        long[] result = new long[numHashFunctions];
-        for (int i = 0; i < numHashFunctions; i++) {
-            long combinedHash = hash1 + i * hash2;
-            if (combinedHash < 0) {
-                combinedHash = ~combinedHash;
-            }
-            result[i] = combinedHash % numBits;
-        }
-        return result;
-    }
 
     /**
      * 获取一个hash值
@@ -309,6 +257,18 @@ public class RedisUtil {
 
 
     /**
+     * 设置过期时间
+     *
+     * @param key
+     * @param timeout
+     * @param unit
+     * @return
+     */
+    public Boolean expire(String key, long timeout, TimeUnit unit) {
+        return redisTemplate.expire(key, timeout, unit);
+    }
+
+    /**
      * set移除元素
      *
      * @param key
@@ -320,19 +280,18 @@ public class RedisUtil {
     }
 
 
-    public void batch(List<String> keyList) {
+    public void batch() {
         Map<String, String> map = new HashMap();
 
-        List<Object> list = redisTemplate.executePipelined(new RedisCallback<String>() {
-            @Override
-            public String doInRedis(RedisConnection redisConnection) throws DataAccessException {
-                StringRedisConnection connection = (StringRedisConnection) redisConnection;
-                for (String key : keyList) {
-                    map.put(key, connection.get(key));
-                }
-                return null;
-            }
+        List<Object> list = redisTemplate.executePipelined((RedisCallback<Object>) redisConnection -> {
+            StringRedisConnection connection = (StringRedisConnection) redisConnection;
+            return connection.execute("BF.RESERVE", "lalala", "0.01", "4000");
+//                for (String key : keyList) {
+//                    map.put(key, connection.get(key));
+//                }
+//                return null;
         });
+        System.out.println(JSON.toJSONString(list));
         map.forEach((k, v) -> {
             System.out.println("k=" + k + ",v=" + v);
         });
@@ -451,7 +410,6 @@ public class RedisUtil {
      * @return
      */
     public List<String> lrange(String key, long start, long end) {
-
         return redisTemplate.opsForList().range(key, start, end);
     }
 
@@ -477,92 +435,62 @@ public class RedisUtil {
     }
 
 
-    /**
-     * 根据给定的布隆过滤器添加值
-     */
-    public <T> void addByBloomFilter(BloomFilterHelper<T> bloomFilterHelper, String key, T value) {
-        Preconditions.checkArgument(bloomFilterHelper != null, "bloomFilterHelper不能为空");
-        long[] offset = bloomFilterHelper.murmurHashOffset(value);
-        for (long i : offset) {
-            redisTemplate.opsForValue().setBit(key, i, true);
-        }
-    }
-
-    /**
-     * 根据给定的布隆过滤器判断值是否存在
-     */
-    public <T> boolean includeByBloomFilter(BloomFilterHelper<T> bloomFilterHelper, String key, T value) {
-        Preconditions.checkArgument(bloomFilterHelper != null, "bloomFilterHelper不能为空");
-        long[] offset = bloomFilterHelper.murmurHashOffset(value);
-        for (long i : offset) {
-            if (!redisTemplate.opsForValue().getBit(key, i)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-
     public void scriptBfAdd(String key, List<String> valueList) {
         redisTemplate.executePipelined(new RedisCallback<Long>() {
-            @Nullable
             @Override
             public Long doInRedis(RedisConnection connection) throws DataAccessException {
-                connection.scriptingCommands().eval(joinBfCommand("bf.madd", key, valueList).getBytes(Charset.forName("UTF-8")), ReturnType.MULTI, 0);
+                for (String value : valueList) {
+                    connection.scriptingCommands().eval(joinBfCommand("bf.add", key, value).getBytes(Charset.forName("UTF-8")), ReturnType.MULTI, 0);
+                }
                 return null;
             }
-        });
+        }, redisTemplate.getValueSerializer());
+
     }
 
     public void scriptBfCreate(String key) {
         //获取redis连接
         RedisConnectionFactory factory = redisTemplate.getConnectionFactory();
         RedisConnection conn = factory.getConnection();
-        List<String> valueList = new ArrayList<>();
-        valueList.add(String.valueOf(bloomFilterConfig.getFpp()));
-        valueList.add(String.valueOf(bloomFilterConfig.getSize()));
-        conn.scriptingCommands().eval(joinBfCommand("bf.reserve", key, valueList).getBytes(Charset.forName("UTF-8")), ReturnType.STATUS, 0);
+        conn.scriptingCommands().eval(joinBfCommand("bf.reserve", key, String.valueOf(bloomFilterConfig.getFpp()), String.valueOf(bloomFilterConfig.getSize())).getBytes(Charset.forName("UTF-8")), ReturnType.STATUS, 0);
         redisTemplate.expire(key, TIME_OUT, TimeUnit.DAYS);
     }
 
 
     public Map<String, Boolean> scriptBfContains(List<String> keyList, List<String> valueList) {
         List<Object> list = redisTemplate.executePipelined(new RedisCallback<Long>() {
-            @Nullable
             @Override
             public Long doInRedis(RedisConnection connection) throws DataAccessException {
                 if (!CollectionUtils.isEmpty(keyList)) {
                     for (String key : keyList) {
-                        connection.scriptingCommands().eval(joinBfCommand("bf.mexists", key, valueList).getBytes(Charset.forName("UTF-8")), ReturnType.MULTI, 0);
+                        for (String value : valueList) {
+                            connection.scriptingCommands().eval(joinBfCommand("bf.exists", key, value).getBytes(Charset.forName("UTF-8")), ReturnType.MULTI, 0);
+                        }
+
                     }
                 }
                 return null;
             }
         }, redisTemplate.getValueSerializer());
+
         Map<String, Boolean> hashMap = new HashMap<>();
         if (!CollectionUtils.isEmpty(list)) {
-            hashMap = valueList.stream().collect(Collectors.toMap(key -> key, key -> (((ArrayList) list.get(0)).get(valueList.indexOf(key)).toString()).equals("1") ? true : false));
+            List<Object> newList = list.stream().map(e -> ((ArrayList) e).get(0)).collect(Collectors.toList());
+            hashMap = valueList.stream().collect(Collectors.toMap(k -> k, v -> newList.get(valueList.indexOf(v)).toString().equals("1") ? true : false));
         }
 
         return hashMap;
     }
 
 
-    /**
-     * 该方法调用lua脚本 局限255个参数，过量的values直接gg
-     * @param command
-     * @param key
-     * @param values
-     * @return
-     */
-    public static String joinBfCommand(String command, String key, List<String> values) {
+    public static String joinBfCommand(String command, String key, String... value) {
         StringBuilder sb = new StringBuilder();
         sb.append("return redis.call('");
         sb.append(command);
         sb.append("','");
         sb.append(key);
         sb.append("'");
-        for (String v : values) {
+        for (String v : value) {
             String s = ",'" + v + "'";
             sb.append(s);
         }
@@ -591,27 +519,6 @@ public class RedisUtil {
     }
 
     public static void main(String[] args) {
-        MotorJedis jedis = new MotorJedis("172.16.248.16", 6380);
-//        jedis.auth("123456");
-        MotorPipeline p = jedis.pipelined();
 
-        List<String> l = new ArrayList<>();
-        l.add("name");
-        for (int i = 1; i < 5000; i++) {
-            l.add("one11jane" + i);
-        }
-        String[] str = new String[l.size()];
-        l.toArray(str);
-        long startTime = System.currentTimeMillis();   //获取开始时间
-//        p.bfMadd("name", str);
-        p.bfMexists("name", str);
-        List<Object> l1 = p.syncAndReturnAll();
-
-        System.out.println(JSON.toJSONString(l1));
-
-        long endTime = System.currentTimeMillis(); //获取结束时间
-        System.out.println("程序运行时间： " + (endTime - startTime) + "ms");
-        jedis.close();
     }
-
 }
