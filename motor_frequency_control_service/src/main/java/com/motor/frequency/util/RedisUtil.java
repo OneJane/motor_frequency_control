@@ -1,10 +1,13 @@
 package com.motor.frequency.util;
 
+import com.alibaba.fastjson.JSON;
 import com.google.common.base.Preconditions;
 import com.google.common.hash.Funnels;
 import com.google.common.hash.Hashing;
 import com.motor.frequency.config.BloomFilterConfig;
 import com.motor.frequency.config.BloomFilterHelper;
+import com.motor.frequency.redis.MotorJedis;
+import com.motor.frequency.redis.MotorPipeline;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RBloomFilter;
 import org.redisson.api.RedissonClient;
@@ -17,8 +20,6 @@ import org.springframework.data.redis.connection.StringRedisConnection;
 import org.springframework.data.redis.core.*;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
-import redis.clients.jedis.Client;
-import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 
 import javax.annotation.Nullable;
@@ -582,37 +583,28 @@ public class RedisUtil {
         return bloomFilter.contains(value);
     }
 
-    public static void main(String[] args){
-        Jedis jedis = new Jedis("172.16.248.16", 6380);
+    public static void main(String[] args) {
+        MotorJedis jedis = new MotorJedis("172.16.248.16", 6380);
 //        jedis.auth("123456");
-//        Pipeline p = jedis.pipelined();
-//        Method method = Pipeline.class.getDeclaredMethod("getClient", String.class);
-//        method.setAccessible(true); // 设置可以访问private和protected方法
-//        Client client= (Client)method.invoke(p, "name");
-        Client client = jedis.getClient();
+        MotorPipeline p = jedis.pipelined();
 
         List<String> l = new ArrayList<>();
         l.add("name");
-        for(int i=1;i<5000;i++){
-            l.add("onejane"+i);
+        for (int i = 1; i < 5000; i++) {
+            l.add("one11jane" + i);
         }
         String[] str = new String[l.size()];
         l.toArray(str);
-        long startTime=System.currentTimeMillis();   //获取开始时间
-        client.sendCommand(BFCommand.MADD, str);
+        long startTime = System.currentTimeMillis();   //获取开始时间
+//        p.bfMadd("name", str);
+        p.bfMexists("name", str);
+        List<Object> l1 = p.syncAndReturnAll();
 
-        List<Long> replay = client.getIntegerMultiBulkReply();
-//        p.sync();
+        System.out.println(JSON.toJSONString(l1));
 
-
-        long endTime=System.currentTimeMillis(); //获取结束时间
-        System.out.println("程序运行时间： "+(endTime-startTime)+"ms");
-        for(Long s:replay) {
-            System.out.println(s);
-        }
-
-        client.close();
-
+        long endTime = System.currentTimeMillis(); //获取结束时间
+        System.out.println("程序运行时间： " + (endTime - startTime) + "ms");
+        jedis.close();
     }
 
 }
