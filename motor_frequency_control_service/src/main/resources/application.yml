@@ -12,6 +12,7 @@ spring:
         max-wait: -1
         max-idle: 200
         min-idle: 10
+        max-total: 10000
     host: ${redis.host}
     port: ${redis.port}
     sentinel:

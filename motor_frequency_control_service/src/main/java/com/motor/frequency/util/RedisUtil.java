@@ -7,6 +7,7 @@ import com.google.common.hash.Hashing;
 import com.motor.frequency.config.BloomFilterConfig;
 import com.motor.frequency.config.BloomFilterHelper;
 import com.motor.frequency.redis.MotorJedis;
+import com.motor.frequency.redis.MotorJedisSentinelPool;
 import com.motor.frequency.redis.MotorPipeline;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RBloomFilter;
@@ -49,6 +50,12 @@ public class RedisUtil {
 
     @Autowired
     private BloomFilterConfig bloomFilterConfig;
+
+    private static MotorJedisSentinelPool sentinelPool;
+    @Autowired
+    public  void setSentinelPool(MotorJedisSentinelPool sentinelPool) {
+        RedisUtil.sentinelPool = sentinelPool;
+    }
 
     // 两个月过期
     private static final long TIME_OUT = 60;
