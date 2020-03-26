@@ -17,6 +17,8 @@ import org.springframework.data.redis.connection.StringRedisConnection;
 import org.springframework.data.redis.core.*;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
+import redis.clients.jedis.Client;
+import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 
 import javax.annotation.Nullable;
@@ -517,8 +519,7 @@ public class RedisUtil {
 
 
     public Map<String, Boolean> scriptBfContains(List<String> keyList, List<String> valueList) {
-        List<Object> result = new ArrayList<>();
-        redisTemplate.executePipelined(new RedisCallback<Long>() {
+        List<Object> list = redisTemplate.executePipelined(new RedisCallback<Long>() {
             @Nullable
             @Override
             public Long doInRedis(RedisConnection connection) throws DataAccessException {
@@ -527,19 +528,25 @@ public class RedisUtil {
                         connection.scriptingCommands().eval(joinBfCommand("bf.mexists", key, valueList).getBytes(Charset.forName("UTF-8")), ReturnType.MULTI, 0);
                     }
                 }
-                result.addAll(connection.closePipeline());
                 return null;
             }
         }, redisTemplate.getValueSerializer());
         Map<String, Boolean> hashMap = new HashMap<>();
-        if (!CollectionUtils.isEmpty(result)) {
-            hashMap = valueList.stream().collect(Collectors.toMap(key -> key, key -> (((ArrayList) result.get(0)).get(valueList.indexOf(key)).toString()).equals("1") ? true : false));
+        if (!CollectionUtils.isEmpty(list)) {
+            hashMap = valueList.stream().collect(Collectors.toMap(key -> key, key -> (((ArrayList) list.get(0)).get(valueList.indexOf(key)).toString()).equals("1") ? true : false));
         }
 
         return hashMap;
     }
 
 
+    /**
+     * 该方法调用lua脚本 局限255个参数，过量的values直接gg
+     * @param command
+     * @param key
+     * @param values
+     * @return
+     */
     public static String joinBfCommand(String command, String key, List<String> values) {
         StringBuilder sb = new StringBuilder();
         sb.append("return redis.call('");
@@ -555,12 +562,6 @@ public class RedisUtil {
         return sb.toString();
     }
 
-    public static void main(String[] args) {
-        List<String> valueList = new ArrayList<>();
-        valueList.add(String.valueOf(0.01));
-        valueList.add(String.valueOf(4000));
-        System.out.println(joinBfCommand("bf.reserve", "a", valueList));
-    }
 
     @Autowired
     RedissonClient redissonClient;
@@ -579,6 +580,39 @@ public class RedisUtil {
         RBloomFilter<String> bloomFilter = redissonClient.getBloomFilter(key);
         bloomFilter.tryInit(bloomFilterConfig.getSize(), bloomFilterConfig.getFpp());
         return bloomFilter.contains(value);
+    }
+
+    public static void main(String[] args){
+        Jedis jedis = new Jedis("172.16.248.16", 6380);
+//        jedis.auth("123456");
+//        Pipeline p = jedis.pipelined();
+//        Method method = Pipeline.class.getDeclaredMethod("getClient", String.class);
+//        method.setAccessible(true); // 设置可以访问private和protected方法
+//        Client client= (Client)method.invoke(p, "name");
+        Client client = jedis.getClient();
+
+        List<String> l = new ArrayList<>();
+        l.add("name");
+        for(int i=1;i<5000;i++){
+            l.add("onejane"+i);
+        }
+        String[] str = new String[l.size()];
+        l.toArray(str);
+        long startTime=System.currentTimeMillis();   //获取开始时间
+        client.sendCommand(BFCommand.MADD, str);
+
+        List<Long> replay = client.getIntegerMultiBulkReply();
+//        p.sync();
+
+
+        long endTime=System.currentTimeMillis(); //获取结束时间
+        System.out.println("程序运行时间： "+(endTime-startTime)+"ms");
+        for(Long s:replay) {
+            System.out.println(s);
+        }
+
+        client.close();
+
     }
 
 }

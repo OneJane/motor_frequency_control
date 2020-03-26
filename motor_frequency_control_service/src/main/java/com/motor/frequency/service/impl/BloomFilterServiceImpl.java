@@ -93,7 +93,7 @@ public class BloomFilterServiceImpl implements IBloomFilterService {
             }
         } else {
             Map<String, Boolean> map = redisUtil.scriptBfContains(keyList, ids);
-// 有分片数据
+            // 有分片数据
             Map<String, Boolean> inexistenceMap = map.entrySet().stream().filter(v -> v.getValue().equals(false))
                     .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
             Integer size = inexistenceMap.keySet().size();
