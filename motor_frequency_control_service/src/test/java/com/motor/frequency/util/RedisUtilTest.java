@@ -1,49 +1,50 @@
 package com.motor.frequency.util;
 
+import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @RunWith(SpringJUnit4ClassRunner.class)
 @SpringBootTest
 public class RedisUtilTest {
-//    @Autowired
-//    MotorJedisSentinelPool sentinelPool;
     @Autowired
     RedisUtil redisUtil;
 
-//    @Test
-//    public void testBloomFilter() {
-//        for (int ii = 0; ii < 10; ii++) {
-//            MotorJedis jedis = sentinelPool.getResource();
-//            MotorPipeline p = jedis.pipelined();
-//            List<String> l = new ArrayList<>();
-//            l.add("name");
-//            for (int i = 1; i < 5000; i++) {
-//                l.add("one11jane" + i);
-//            }
-//            String[] str = new String[l.size()];
-//            l.toArray(str);
-//            long startTime = System.currentTimeMillis();   //获取开始时间
-//            p.bfMexists("name", str);
-//            p.bfMexists("name", str);
-//            p.bfMexists("name", str);
-//            p.bfMexists("name", str);
-//            p.bfMexists("name", str);
-//            p.bfMexists("name", str);
-////        p.sync();
-//            List<Object> l1 = p.syncAndReturnAll();
-//            System.out.println(JSON.toJSONString(l1));
-//            long endTime = System.currentTimeMillis(); //获取结束时间
-//            System.out.println("程序运行时间： " + (endTime - startTime) + "ms");
-//            jedis.close();
-//        }
-//    }
+    @Test
+    public void testBloomFilter() {
+    }
+
+    @Test
+    public void testBfAdd() {
+        List<String> aaa = new ArrayList<>();
+        aaa.add("111");
+        aaa.add("222");
+        redisUtil.scriptBfAdd("nnn", aaa);
+    }
+
+    @Test
+    public void testGet() {
+        redisUtil.setValue("aaaa", "1");
+        String a = redisUtil.getValue("aaaa");
+        System.out.println(a);
+        Assert.assertEquals(a, "1");
+    }
 
     @Test
     public void testBatch() {
-        redisUtil.batch();
+        List<String> a = new ArrayList<>();
+        a.add("nnn");
+        List<String> aaa = new ArrayList<>();
+        aaa.add("789");
+        aaa.add("153");
+        redisUtil.scriptBfAdd("nnn",aaa);
+        aaa.add("asd");
+        redisUtil.scriptBfContains(a,aaa);
     }
 }

@@ -7,15 +7,13 @@ import com.motor.frequency.config.BloomFilterConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RBloomFilter;
 import org.redisson.api.RedissonClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.connection.RedisConnection;
-import org.springframework.data.redis.connection.RedisConnectionFactory;
-import org.springframework.data.redis.connection.ReturnType;
 import org.springframework.data.redis.connection.StringRedisConnection;
 import org.springframework.data.redis.core.*;
 import org.springframework.stereotype.Component;
-import org.springframework.util.CollectionUtils;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -44,6 +42,7 @@ public class RedisUtil {
     // 两个月过期
     private static final long TIME_OUT = 60;
 
+    private static Logger logger = LoggerFactory.getLogger(RedisUtil.class);
 
     /**
      * 默认过期时长，单位：秒
@@ -436,47 +435,60 @@ public class RedisUtil {
 
 
     public void scriptBfAdd(String key, List<String> valueList) {
-        redisTemplate.executePipelined(new RedisCallback<Long>() {
-            @Override
-            public Long doInRedis(RedisConnection connection) throws DataAccessException {
-                for (String value : valueList) {
-                    connection.scriptingCommands().eval(joinBfCommand("bf.add", key, value).getBytes(Charset.forName("UTF-8")), ReturnType.MULTI, 0);
-                }
-                return null;
+        Object result = redisTemplate.execute((RedisCallback<Object>) connection -> {
+            StringRedisConnection connection1 = (StringRedisConnection) connection;
+            List<String> vl1 = new ArrayList<>();
+            vl1.add(key);
+            vl1.addAll(valueList);
+            return connection1.execute("BF.MADD", vl1.toArray(new String[vl1.size()]));
+        });
+        try {
+            List<String> ret = (List<String>) result;
+            if (ret.size() != valueList.size() - 1) {
+                throw new RuntimeException("bf.madd error!");
             }
-        }, redisTemplate.getValueSerializer());
-
+        } catch (Exception e) {
+            logger.error("插入数据失败");
+        }
     }
 
     public void scriptBfCreate(String key) {
-        //获取redis连接
-        RedisConnectionFactory factory = redisTemplate.getConnectionFactory();
-        RedisConnection conn = factory.getConnection();
-        conn.scriptingCommands().eval(joinBfCommand("bf.reserve", key, String.valueOf(bloomFilterConfig.getFpp()), String.valueOf(bloomFilterConfig.getSize())).getBytes(Charset.forName("UTF-8")), ReturnType.STATUS, 0);
-        redisTemplate.expire(key, TIME_OUT, TimeUnit.DAYS);
+        try {
+            redisTemplate.execute((RedisCallback<Object>) redisConnection -> {
+                StringRedisConnection connection = (StringRedisConnection) redisConnection;
+                return connection.execute("BF.RESERVE", key, String.valueOf(bloomFilterConfig.getFpp()), String.valueOf(bloomFilterConfig.getSize()));
+            });
+        } catch (Exception e) {
+            logger.error("新建" + key + "分片失败");
+        }
     }
 
 
     public Map<String, Boolean> scriptBfContains(List<String> keyList, List<String> valueList) {
-        List<Object> list = redisTemplate.executePipelined(new RedisCallback<Long>() {
-            @Override
-            public Long doInRedis(RedisConnection connection) throws DataAccessException {
-                if (!CollectionUtils.isEmpty(keyList)) {
-                    for (String key : keyList) {
-                        for (String value : valueList) {
-                            connection.scriptingCommands().eval(joinBfCommand("bf.exists", key, value).getBytes(Charset.forName("UTF-8")), ReturnType.MULTI, 0);
-                        }
 
-                    }
-                }
-                return null;
+        List<Object> list = redisTemplate.executePipelined((RedisCallback<List<Object>>) redisConnection -> {
+            StringRedisConnection connection = (StringRedisConnection) redisConnection;
+            for (String key : keyList) {
+                List<String> vl1 = new ArrayList<>();
+                vl1.add(key);
+                vl1.addAll(valueList);
+                connection.execute("BF.MEXISTS", vl1.toArray(new String[vl1.size()]));
             }
-        }, redisTemplate.getValueSerializer());
+            return null;
+        });
 
-        Map<String, Boolean> hashMap = new HashMap<>();
-        if (!CollectionUtils.isEmpty(list)) {
-            List<Object> newList = list.stream().map(e -> ((ArrayList) e).get(0)).collect(Collectors.toList());
-            hashMap = valueList.stream().collect(Collectors.toMap(k -> k, v -> newList.get(valueList.indexOf(v)).toString().equals("1") ? true : false));
+
+        Map<String, Boolean> hashMap = new LinkedHashMap<>();
+        if (keyList.size() == list.size()) {
+            for (int i = 0; i < valueList.size(); i++) {
+                final int i1=i;
+                List<Object> newList = list.stream().map(e -> ((ArrayList) e).get(i1)).collect(Collectors.toList());
+                if(newList.indexOf(1L) != -1){
+                    hashMap.put(valueList.get(i),true);
+                } else {
+                    hashMap.put(valueList.get(i),false);
+                }
+            }
         }
 
         return hashMap;
